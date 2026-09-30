@@ -1,0 +1,312 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "BranchPruner API",
+    "version": "1.0.0",
+    "description": "Automated Git hygiene controller API for scanning stale branches, sending Slack alerts, 7-day remediation grace period, safe pruning with archive refs, and zero-loss snapshot restoration."
+  },
+  "servers": [
+    { "url": "/api", "description": "BranchPruner Base API" }
+  ],
+  "paths": {
+    "/auth/login": {
+      "post": {
+        "summary": "Authenticate user",
+        "description": "Sign in with email and password. Sets httpOnly access_token (15m) and refresh_token (7d) cookies.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Authenticated successfully" },
+          "401": { "description": "Invalid credentials" },
+          "422": { "description": "Validation error" }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "summary": "Refresh access token",
+        "description": "Uses rotating refresh token cookie to issue a new access token and rotated refresh token.",
+        "responses": {
+          "200": { "description": "Token refreshed" },
+          "401": { "description": "Invalid or expired refresh token" }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "summary": "Sign out",
+        "description": "Revokes refresh token and clears session cookies.",
+        "responses": {
+          "200": { "description": "Logged out" }
+        }
+      }
+    },
+    "/me": {
+      "get": {
+        "summary": "Get authenticated user profile",
+        "responses": {
+          "200": { "description": "User profile" },
+          "401": { "description": "Unauthenticated" }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "summary": "Get dashboard metrics",
+        "responses": {
+          "200": {
+            "description": "Dashboard statistics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "repositoriesTracked": { "type": "integer" },
+                    "clutterReducedPercent": { "type": "integer" },
+                    "clutterTargetPercent": { "type": "integer", "example": 80 },
+                    "activeSnapshots": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/repositories": {
+      "get": {
+        "summary": "List tracked repositories",
+        "description": "Returns repositories for dropdown filtering.",
+        "responses": {
+          "200": { "description": "List of repositories" }
+        }
+      }
+    },
+    "/pending-branches": {
+      "get": {
+        "summary": "List pending remediation branches",
+        "parameters": [
+          { "name": "search", "in": "query", "schema": { "type": "string" } },
+          { "name": "repoId", "in": "query", "schema": { "type": "string" } },
+          { "name": "sort", "in": "query", "schema": { "type": "string", "enum": ["timeLeft", "staleness", "branchName"] } },
+          { "name": "order", "in": "query", "schema": { "type": "string", "enum": ["asc", "desc"] } },
+          { "name": "page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "Paginated list of pending branches" }
+        }
+      }
+    },
+    "/pending-branches/{id}/notify-slack": {
+      "post": {
+        "summary": "Dispatch Slack alert for branch author",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Notification dispatched" },
+          "409": { "description": "SLACK_NOT_CONNECTED" }
+        }
+      }
+    },
+    "/pending-branches/{id}/keep": {
+      "post": {
+        "summary": "Keep branch (whitelist / extend grace period)",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Branch kept with signed 10s undoToken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "undoToken": { "type": "string" },
+                    "undoExpiresAt": { "type": "string", "format": "date-time" },
+                    "keptUntil": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pending-branches/{id}/undo-keep": {
+      "post": {
+        "summary": "Undo keep branch within 10 seconds",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["undoToken"],
+                "properties": { "undoToken": { "type": "string" } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Branch reverted to flagged" },
+          "410": { "description": "TOKEN_EXPIRED - undo window exceeded" }
+        }
+      }
+    },
+    "/pending-branches/{id}/prune": {
+      "post": {
+        "summary": "Prune remote branch with archive ref",
+        "description": "Safe, transactional prune flow: creates archive ref before remote ref deletion. Enforces Dry-Run mode.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "Idempotency-Key", "in": "header", "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["confirm"],
+                "properties": { "confirm": { "type": "boolean" } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Prune executed (or simulated if dryRun=true)" },
+          "400": { "description": "Invalid branch state or confirm not true" }
+        }
+      }
+    },
+    "/activity": {
+      "get": {
+        "summary": "List recovery log activity",
+        "parameters": [
+          { "name": "repoId", "in": "query", "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "Paginated recovery log" }
+        }
+      }
+    },
+    "/activity/{id}/restore": {
+      "post": {
+        "summary": "1-Click restore branch ref from snapshot commit SHA",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Branch restored" },
+          "409": { "description": "BRANCH_EXISTS - remote branch name taken" }
+        }
+      }
+    },
+    "/integrations": {
+      "get": {
+        "summary": "List integrations status",
+        "responses": {
+          "200": { "description": "Integrations list" }
+        }
+      }
+    },
+    "/rules/protected-branches": {
+      "get": {
+        "summary": "List protected wildcard patterns",
+        "responses": {
+          "200": { "description": "List of protected patterns" }
+        }
+      },
+      "post": {
+        "summary": "Add protected branch pattern",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["pattern"],
+                "properties": { "pattern": { "type": "string" } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Pattern added and matching branches retroactively protected" },
+          "422": { "description": "Validation error or duplicate pattern" }
+        }
+      }
+    },
+    "/rules/protected-branches/{id}": {
+      "delete": {
+        "summary": "Delete protected pattern",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Pattern deleted" },
+          "400": { "description": "Cannot delete core preset patterns" }
+        }
+      }
+    },
+    "/settings": {
+      "get": {
+        "summary": "Get workspace settings",
+        "responses": {
+          "200": { "description": "Settings" }
+        }
+      },
+      "patch": {
+        "summary": "Update workspace settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "dryRun": { "type": "boolean" },
+                  "staleAfterDays": { "type": "integer", "minimum": 14, "maximum": 180 },
+                  "autoPrune": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Settings updated" }
+        }
+      }
+    },
+    "/webhooks/github": {
+      "post": {
+        "summary": "GitHub push webhook receiver",
+        "description": "Public webhook endpoint verifying x-hub-signature-256 HMAC signature. Resets branch staleness on push.",
+        "responses": {
+          "200": { "description": "Webhook handled" },
+          "401": { "description": "Invalid signature" }
+        }
+      }
+    }
+  }
+}

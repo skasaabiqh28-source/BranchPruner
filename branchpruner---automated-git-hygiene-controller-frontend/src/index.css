@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-olive: #6B7A2A;
+  --color-brand-darkOlive: #4A5519;
+  --color-brand-deepOlive: #3B4415;
+  --color-brand-orange: #FF6A00;
+  --color-brand-bgLight: #FAF9F5;
+  --color-brand-bgSecondary: #F5F3EC;
+  --color-brand-github: #24292F;
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+body {
+  font-family: var(--font-sans);
+  margin: 0;
+  padding: 0;
+  background-color: #0A0A0A;
+  color: #1a1a1a;
+  -webkit-font-smoothing: antialiased;
+}
+
+.bg-dotted-olive {
+  background-image: radial-gradient(rgba(107, 122, 42, 0.18) 1.2px, transparent 1.2px);
+  background-size: 20px 20px;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.animate-blink {
+  animation: blink 0.9s infinite;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.03);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(107, 122, 42, 0.25);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(107, 122, 42, 0.45);
+}

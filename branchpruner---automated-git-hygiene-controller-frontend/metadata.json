@@ -1,0 +1,6 @@
+{
+  "name": "BranchPruner - Automated Git Hygiene Controller",
+  "description": "Safeguard master repos, prune stale remote branches, and maintain continuous repository health with zero-loss snapshot recovery.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
